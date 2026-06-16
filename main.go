@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sort"
 	"sync"
 	"time"
 
@@ -77,6 +78,22 @@ func (r *Room) snapshot(includePeers bool) RoomSnapshot {
 	}
 }
 
+func promoteRoomHost(room *Room) {
+	if room == nil || len(room.Peers) == 0 {
+		return
+	}
+
+	ids := make([]string, 0, len(room.Peers))
+	for peerID := range room.Peers {
+		ids = append(ids, peerID)
+	}
+	sort.Strings(ids)
+
+	next := room.Peers[ids[0]]
+	room.HostID = next.id
+	room.HostNick = next.nick
+}
+
 type Client struct {
 	id     string
 	nick   string
@@ -119,14 +136,19 @@ func (h *Hub) removeClient(c *Client) {
 	}
 
 	delete(room.Peers, c.id)
-	if room.HostID == c.id || len(room.Peers) == 0 {
+	if len(room.Peers) == 0 {
 		delete(h.rooms, room.ID)
 		h.broadcastLocked(Envelope{
 			Type:   "room_closed",
 			RoomID: room.ID,
 			SentAt: time.Now().UnixMilli(),
 		}, room)
+		h.broadcastRoomsLocked()
 		return
+	}
+
+	if room.HostID == c.id {
+		promoteRoomHost(room)
 	}
 
 	h.broadcastLocked(Envelope{
@@ -136,6 +158,7 @@ func (h *Hub) removeClient(c *Client) {
 		Nick:   c.nick,
 		SentAt: time.Now().UnixMilli(),
 	}, room)
+	h.broadcastRoomsLocked()
 }
 
 func (h *Hub) handle(c *Client, env Envelope) {
@@ -255,10 +278,14 @@ func (h *Hub) leaveRoomLocked(c *Client) {
 	}
 
 	delete(room.Peers, c.id)
-	if room.HostID == c.id || len(room.Peers) == 0 {
+	if len(room.Peers) == 0 {
 		delete(h.rooms, room.ID)
 		h.broadcastLocked(Envelope{Type: "room_closed", RoomID: room.ID, SentAt: time.Now().UnixMilli()}, room)
 		return
+	}
+
+	if room.HostID == c.id {
+		promoteRoomHost(room)
 	}
 
 	h.broadcastLocked(Envelope{
