@@ -157,6 +157,8 @@ func (h *Hub) handle(c *Client, env Envelope) {
 		h.routeToPeer(c, env)
 	case "mute_status", "peer_status":
 		h.broadcastPeerStatus(c, env)
+	case "voice_frame":
+		h.broadcastVoiceFrame(c, env)
 	case "heartbeat":
 		h.enqueue(c, Envelope{Type: "heartbeat_ack", SentAt: time.Now().UnixMilli()})
 	default:
@@ -285,6 +287,21 @@ func (h *Hub) routeToPeer(c *Client, env Envelope) {
 }
 
 func (h *Hub) broadcastPeerStatus(c *Client, env Envelope) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	room, ok := h.rooms[c.roomID]
+	if !ok {
+		return
+	}
+	env.PeerID = c.id
+	env.Nick = c.nick
+	env.RoomID = c.roomID
+	env.SentAt = time.Now().UnixMilli()
+	h.broadcastLocked(env, room)
+}
+
+func (h *Hub) broadcastVoiceFrame(c *Client, env Envelope) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
