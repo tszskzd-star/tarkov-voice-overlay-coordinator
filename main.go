@@ -16,6 +16,7 @@ import (
 )
 
 const maxPeersPerRoom = 5
+const maxVoicePayloadBytes = 4096
 
 type Envelope struct {
 	Type         string          `json:"type"`
@@ -309,9 +310,15 @@ func (h *Hub) broadcastVoiceFrame(c *Client, env Envelope) {
 	if !ok {
 		return
 	}
+	if len(env.Payload) == 0 || len(env.Payload) > maxVoicePayloadBytes {
+		return
+	}
+
+	env.Type = "voice_frame"
 	env.PeerID = c.id
 	env.Nick = c.nick
 	env.RoomID = c.roomID
+	env.TargetPeerID = ""
 	env.SentAt = time.Now().UnixMilli()
 	h.broadcastLocked(env, room)
 }
